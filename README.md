@@ -82,6 +82,7 @@ This application allows you to summarize YouTube videos by transcribing and proc
 
 <img width="1440" alt="Screenshot 2024-12-16 at 12 44 20 PM" src="https://github.com/user-attachments/assets/b20f00db-43bd-48cd-9ba3-b42ce989f7eb" />
 
+<img width="1440" alt="Screenshot 2024-12-16 at 12 56 25 PM" src="https://github.com/user-attachments/assets/90f34749-ecf4-4b0f-af8e-0fbdcdb21125" />
 
 
 
