@@ -8,11 +8,19 @@ from transformers import WhisperProcessor, WhisperForConditionalGeneration
 import librosa
 import torch
 from dotenv import load_dotenv
+import shutil
 
 # Load environment variables
 load_dotenv()
 
 st.set_page_config(layout="wide")
+
+# Function to check if FFmpeg is installed
+def check_ffmpeg_installed():
+    if not shutil.which("ffmpeg"):
+        st.error("FFmpeg is not installed. Please install it to proceed.")
+        return False
+    return True
 
 # Function to re-encode audio file to opus (ogg) format
 def reencode_audio_to_ogg(input_file, output_file="encoded_audio.ogg"):
@@ -53,14 +61,21 @@ def transcribe_audio_with_whisper(file_path, model_name="openai/whisper-medium",
         audio, rate = librosa.load(file_path, sr=16000, mono=True)
         inputs = processor(audio, sampling_rate=rate, return_tensors="pt", padding=True)
 
+        # Ensure attention mask is explicitly set
+        inputs['attention_mask'] = torch.ones_like(inputs.input_features[:, 0, :])
+
         # Force the model to transcribe in the target language
         forced_decoder_ids = processor.get_decoder_prompt_ids(language=target_language)
 
         # Generate transcription
         with torch.no_grad():
-            generated_ids = model.generate(inputs.input_features, forced_decoder_ids=forced_decoder_ids)
+            generated_ids = model.generate(
+                inputs.input_features, 
+                attention_mask=inputs['attention_mask'], 
+                forced_decoder_ids=forced_decoder_ids
+            )
         transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-
+        print(transcription)
         return {"text": transcription}
     except Exception as e:
         return {"error": f"Error during transcription: {e}"}
@@ -76,7 +91,15 @@ def main():
 
     youtube_url = st.text_input("Enter YouTube URL")
 
+    # Initialize session state for transcription
+    if 'transcription' not in st.session_state:
+        st.session_state.transcription = None
+        st.session_state.error = None
+
     if st.button("Submit") and youtube_url:
+        if not check_ffmpeg_installed():
+            return
+
         start_time = time.time()
 
         st.info("Downloading video...")
@@ -97,21 +120,34 @@ def main():
         st.info("Transcribing audio...")
         transcription_output = transcribe_audio_with_whisper(ogg_file_path)
 
-        # Check transcription output
+        # Store transcription or error in session state
         if 'text' in transcription_output:
-            text = transcription_output['text']
-            st.success("Transcription completed!")
-            st.write(f"**Transcription:** {text[:500]}...")
-
-            # Placeholder: Add your summarization/QA pipeline here
-            st.write("**Note:** Integrate your summarization or QA pipeline for further processing.")
+            st.session_state.transcription = transcription_output['text']
+            st.session_state.error = None
         else:
-            st.error(f"Error: {transcription_output.get('error', 'Unknown error occurred.')}")
+            st.session_state.transcription = None
+            st.session_state.error = transcription_output.get('error', 'Unknown error occurred.')
 
         end_time = time.time()
         elapsed_time = end_time - start_time
-
         st.write(f"**Processing Time:** {elapsed_time:.2f} seconds")
+
+        # Cleanup temporary audio files
+        try:
+            os.remove(file_path)
+            os.remove(ogg_file_path)
+        except Exception as e:
+            st.warning(f"Temporary file cleanup failed: {e}")
+
+    # Display transcription
+    if st.session_state.transcription:
+        st.success("Transcription completed!")
+        if st.checkbox("Show full transcription"):
+            st.write(f"**Full Transcription:** {st.session_state.transcription}")
+        else:
+            st.write(f"**Partial Transcription:** {st.session_state.transcription[:500]}...")
+    elif st.session_state.error:
+        st.error(f"Error: {st.session_state.error}")
 
 if __name__ == "__main__":
     main()
